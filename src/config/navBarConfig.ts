@@ -59,11 +59,11 @@ const getDynamicNavBarConfig = (): NavBarConfig => {
 			// 相册
 			LinkPresets.Gallery,
 
-			// 追番
-			LinkPresets.Anime,
+			// 追番（已隐藏，如需恢复取消注释即可）
+			// LinkPresets.Anime,
 
-			// 番组计划
-			LinkPresets.Bangumi,
+			// 番组计划（已隐藏，如需恢复取消注释即可）
+			// LinkPresets.Bangumi,
 
 			// 书签导航
 			LinkPresets.Booknav,
@@ -76,8 +76,8 @@ const getDynamicNavBarConfig = (): NavBarConfig => {
 		url: "#",
 		icon: "material-symbols:info",
 		children: [
-			// 打赏
-			LinkPresets.Sponsor,
+			// 打赏（已隐藏，如需恢复取消注释即可）
+			// LinkPresets.Sponsor,
 
 			// 关于页面
 			LinkPresets.About,

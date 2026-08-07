@@ -30,11 +30,11 @@ export const coverImageConfig: CoverImageConfig = {
 	randomCoverImage: {
 		// 随机封面图功能开关
 		enable: false,
-		// 封面图API列表
+		// 封面图API列表（已换成随机风景图API）
 		apis: [
-			"https://t.alcy.cc/pc",
-			"https://www.dmoe.cc/random.php",
-			"https://uapis.cn/api/v1/random/image?category=acg&type=pc",
+			"https://api.btstu.cn/sjbz/api.php?lx=fengjing&format=images",
+			"https://api.ixiaowai.cn/gqapi/gqapi.php",
+			"https://loremflickr.com/1920/1080/landscape,nature,mountain,sea,forest",
 		],
 	},
 };
