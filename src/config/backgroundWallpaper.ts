@@ -25,32 +25,64 @@ export const backgroundWallpaper: BackgroundWallpaperConfig = {
 	 * mobile: "assets/images/MobileWallpaper/m1.avif", // 单张图片
 	 *
 	 * 支持配置多张图片（数组），每次刷新页面随机显示一张：
-	 * desktop: [
-	 * "assets/images/DesktopWallpaper/d1.avif",
-	 * "assets/images/DesktopWallpaper/d2.avif",
-	 * ],
+	 * desktop: ["assets/images/DesktopWallpaper/d1.avif", "assets/images/DesktopWallpaper/d2.avif"],
 	 *
-	 * mobile:[
-	 *   "assets/images/MobileWallpaper/m1.avif",
-	 *   "assets/images/MobileWallpaper/m2.avif",
-	 * ],
+	 * mobile: ["assets/images/MobileWallpaper/m1.avif", "assets/images/MobileWallpaper/m2.avif"],
 	 */
 	src: {
-		// 桌面背景图片（支持单张或多张随机，这里使用随机风景图API，每次刷新随机一张高清风景照）
-		// desktop: "assets/images/DesktopWallpaper/d1.avif",
+		// 桌面背景图片（使用本地壁纸，随机切换）
 		desktop: [
-			"https://api.btstu.cn/sjbz/api.php?lx=fengjing&format=images",
-			"https://api.ixiaowai.cn/gqapi/gqapi.php",
+			"/assets/images/DesktopWallpaper/d1.webp",
+			"/assets/images/DesktopWallpaper/d2.webp",
+			"/assets/images/DesktopWallpaper/d3.webp",
+			"/assets/images/DesktopWallpaper/d4.webp",
+			"/assets/images/DesktopWallpaper/d5.webp",
+			"/assets/images/DesktopWallpaper/d6.webp",
+			"/assets/images/DesktopWallpaper/d7.webp",
+			"/assets/images/DesktopWallpaper/d8.webp",
+			"/assets/images/DesktopWallpaper/d9.webp",
+			"/assets/images/DesktopWallpaper/d10.webp",
+			"/assets/images/DesktopWallpaper/d11.webp",
+			"/assets/images/DesktopWallpaper/d12.webp",
+			"/assets/images/DesktopWallpaper/d13.webp",
+			"/assets/images/DesktopWallpaper/d14.webp",
+			"/assets/images/DesktopWallpaper/d15.webp",
+			"/assets/images/DesktopWallpaper/d16.webp",
+			"/assets/images/DesktopWallpaper/d17.webp",
+			"/assets/images/DesktopWallpaper/d18.webp",
+			"/assets/images/DesktopWallpaper/d19.webp",
+			"/assets/images/DesktopWallpaper/d20.webp",
+			"/assets/images/DesktopWallpaper/d21.webp",
+			"/assets/images/DesktopWallpaper/d22.webp",
+			"/assets/images/DesktopWallpaper/d23.webp",
 		],
-		// 移动背景图片（支持单张或多张随机，这里使用随机风景图API）
-		// mobile: "assets/images/MobileWallpaper/m1.avif",
+		// 移动背景图片
 		mobile: [
-			"https://api.btstu.cn/sjbz/api.php?lx=fengjing&format=images",
-			"https://api.ixiaowai.cn/gqapi/gqapi.php",
+			"/assets/images/MobileWallpaper/m1.webp",
+			"/assets/images/MobileWallpaper/m2.webp",
+			"/assets/images/MobileWallpaper/m3.webp",
+			"/assets/images/MobileWallpaper/m4.webp",
+			"/assets/images/MobileWallpaper/m5.webp",
+			"/assets/images/MobileWallpaper/m6.webp",
+			"/assets/images/MobileWallpaper/m7.webp",
+			"/assets/images/MobileWallpaper/m8.webp",
+			"/assets/images/MobileWallpaper/m9.webp",
+			"/assets/images/MobileWallpaper/m10.webp",
+			"/assets/images/MobileWallpaper/m11.webp",
+			"/assets/images/MobileWallpaper/m12.webp",
+			"/assets/images/MobileWallpaper/m13.webp",
+			"/assets/images/MobileWallpaper/m14.webp",
+			"/assets/images/MobileWallpaper/m15.webp",
+			"/assets/images/MobileWallpaper/m16.webp",
+			"/assets/images/MobileWallpaper/m17.webp",
+			"/assets/images/MobileWallpaper/m18.webp",
+			"/assets/images/MobileWallpaper/m19.webp",
+			"/assets/images/MobileWallpaper/m20.webp",
+			"/assets/images/MobileWallpaper/m21.webp",
+			"/assets/images/MobileWallpaper/m22.webp",
+			"/assets/images/MobileWallpaper/m23.webp",
 		],
 		// 背景视频播放地址（已关闭视频播放）
-		// playerUrl: "/assets/videos/firefly.mp4",
-		// playerUrl: "https://bed.twoleaf.cn/file/1785658612716_firefly.mp4",
 		playerUrl: "",
 	},
 	// 横幅壁纸和全屏壁纸共享配置
@@ -62,7 +94,7 @@ export const backgroundWallpaper: BackgroundWallpaperConfig = {
 		// 主页横幅文字
 		homeText: {
 			// 是否启用主页横幅文字
-			enable: true,
+			enable: false,
 			// 主页横幅主标题
 			title: "Lovely firefly!",
 			// 主页横幅主标题字体大小

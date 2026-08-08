@@ -15,6 +15,7 @@ import {
 	displaySettingsConfig,
 	expressiveCodeConfig,
 	sakuraConfig,
+	snowConfig,
 	siteConfig,
 } from "../config";
 import { isHomePage as checkIsHomePage } from "./layout-utils";
@@ -1171,6 +1172,37 @@ export function setSakuraEnabled(enabled: boolean): void {
 	// 实时切换樱花特效
 	window.dispatchEvent(
 		new CustomEvent("sakuraToggle", { detail: { enabled } }),
+	);
+}
+
+// Snow effect functions
+export function getDefaultSnowEnabled(): boolean {
+	return snowConfig?.enable ?? false;
+}
+
+export function getStoredSnowEnabled(): boolean {
+	if (typeof localStorage === "undefined") {
+		return getDefaultSnowEnabled();
+	}
+	const stored = localStorage.getItem("snowEnabled");
+	if (stored === null) {
+		return getDefaultSnowEnabled();
+	}
+	return stored === "true";
+}
+
+export function setSnowEnabled(enabled: boolean): void {
+	if (
+		typeof localStorage === "undefined" ||
+		typeof localStorage.setItem !== "function"
+	) {
+		return;
+	}
+	localStorage.setItem("snowEnabled", String(enabled));
+	document.documentElement.setAttribute("data-snow-enabled", String(enabled));
+	// 实时切换下雪特效
+	window.dispatchEvent(
+		new CustomEvent("snowToggle", { detail: { enabled } }),
 	);
 }
 

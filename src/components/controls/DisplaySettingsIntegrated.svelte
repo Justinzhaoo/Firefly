@@ -18,6 +18,7 @@ import {
 	getDefaultOverlayCardOpacity,
 	getDefaultOverlayOpacity,
 	getDefaultSakuraEnabled,
+	getDefaultSnowEnabled,
 	getDefaultWavesEnabled,
 	getHue,
 	getStoredBannerCarouselEnabled,
@@ -29,6 +30,7 @@ import {
 	getStoredOverlayCardOpacity,
 	getStoredOverlayOpacity,
 	getStoredSakuraEnabled,
+	getStoredSnowEnabled,
 	getStoredWallpaperMode,
 	getStoredWavesEnabled,
 	setBannerCarouselEnabled,
@@ -41,6 +43,7 @@ import {
 	setOverlayCardOpacity,
 	setOverlayOpacity,
 	setSakuraEnabled,
+	setSnowEnabled,
 	setWallpaperMode,
 	setWavesEnabled,
 } from "@utils/setting-utils";
@@ -94,6 +97,8 @@ let bannerCarouselEnabled = $state(true);
 const defaultBannerCarouselEnabled = getDefaultBannerCarouselEnabled();
 let sakuraEnabled = $state(true);
 const defaultSakuraEnabled = getDefaultSakuraEnabled();
+let snowEnabled = $state(true);
+const defaultSnowEnabled = getDefaultSnowEnabled();
 let overlayOpacity = $state(getDefaultOverlayOpacity());
 const defaultOverlayOpacity = getDefaultOverlayOpacity();
 let overlayBlur = $state(getDefaultOverlayBlur());
@@ -121,6 +126,7 @@ const isBannerTitleSwitchable =
 const isBannerCarouselSwitchable =
 	displaySettingsConfig.bannerCarouselSwitchable;
 const isSakuraSwitchable = displaySettingsConfig.sakuraSwitchable;
+const isSnowSwitchable = displaySettingsConfig.snowSwitchable;
 const isCardBorderSwitchable = displaySettingsConfig.cardBorderSwitchable;
 const isCardFollowThemeSwitchable =
 	displaySettingsConfig.cardFollowThemeSwitchable;
@@ -380,6 +386,11 @@ function toggleSakuraEnabled() {
 	setSakuraEnabled(sakuraEnabled);
 }
 
+function toggleSnowEnabled() {
+	snowEnabled = !snowEnabled;
+	setSnowEnabled(snowEnabled);
+}
+
 function toggleCardBorderEnabled() {
 	cardBorderEnabled = !cardBorderEnabled;
 	setCardBorderEnabled(cardBorderEnabled);
@@ -494,6 +505,7 @@ onMount(() => {
 
 	// 从localStorage读取樱花特效状态
 	sakuraEnabled = getStoredSakuraEnabled();
+	snowEnabled = getStoredSnowEnabled();
 
 	// 从localStorage读取卡片样式状态
 	cardBorderEnabled = getStoredCardBorderEnabled();
@@ -929,21 +941,14 @@ $effect(() => {
 		{/if}
 	{/if}
 
-	<!-- Effects Tab: Sakura -->
+	<!-- Effects Tab: 特效 -->
 	{#if activeTab === "effects"}
-		{#if isSakuraSwitchable}
+		{#if isSakuraSwitchable || isSnowSwitchable}
 		<div class="">
 			<div class="section-title">
 				{i18n(I18nKey.effectsSettings)}
-				<button aria-label="Reset to Default" class="btn-regular rounded-md active:scale-90"
-						class:opacity-0={sakuraEnabled === defaultSakuraEnabled} class:pointer-events-none={sakuraEnabled === defaultSakuraEnabled}
-						disabled={sakuraEnabled === defaultSakuraEnabled} aria-hidden={sakuraEnabled === defaultSakuraEnabled ? "true" : undefined}
-						onclick={() => { sakuraEnabled = defaultSakuraEnabled; setSakuraEnabled(defaultSakuraEnabled); }}>
-					<div class="text-(--btn-content)">
-						<Icon icon="fa7-solid:arrow-rotate-left" class="text-[0.75rem]"></Icon>
-					</div>
-				</button>
 			</div>
+			{#if isSakuraSwitchable}
 			<button
 				class="w-full btn-regular rounded-md py-2 px-3 flex items-center gap-3 text-left active:scale-95 transition-all relative overflow-hidden"
 				class:bg-(--btn-regular-bg-hover)={sakuraEnabled}
@@ -959,6 +964,24 @@ $effect(() => {
 						 class:left-5={sakuraEnabled}></div>
 				</div>
 			</button>
+			{/if}
+			{#if isSnowSwitchable}
+			<button
+				class="w-full btn-regular rounded-md py-2 px-3 flex items-center gap-3 text-left active:scale-95 transition-all relative overflow-hidden mt-2"
+				class:bg-(--btn-regular-bg-hover)={snowEnabled}
+				onclick={toggleSnowEnabled}
+			>
+				<Icon icon="mdi:snowflake" class="text-[1.25rem] shrink-0"></Icon>
+				<span class="text-sm flex-1">{i18n(I18nKey.snowEffect)}</span>
+				<div class="w-10 h-5 rounded-full transition-all duration-200 relative"
+					 class:bg-(--primary)={snowEnabled}
+					 class:bg-(--btn-regular-bg-active)={!snowEnabled}>
+					<div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all duration-200"
+						 class:left-0.5={!snowEnabled}
+						 class:left-5={snowEnabled}></div>
+				</div>
+			</button>
+			{/if}
 		</div>
 		{/if}
 	{/if}

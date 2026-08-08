@@ -49,4 +49,7 @@ export const displaySettingsConfig: DisplaySettingsConfig = {
 
 	// 樱花特效开关
 	sakuraSwitchable: true,
+
+	// 下雪特效开关
+	snowSwitchable: true,
 };

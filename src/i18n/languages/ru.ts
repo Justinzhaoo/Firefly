@@ -301,6 +301,7 @@ export const ru: Translation = {
 	[Key.wavesAnimation]: "Анимация волн",
 	[Key.gradientTransition]: "Градиентный переход",
 	[Key.sakuraEffect]: "Эффект сакуры",
+	[Key.snowEffect]: "Снежный эффект",
 	[Key.effectsSettings]: "Настройки эффектов",
 	[Key.overlaySettings]: "Настройки прозрачности",
 	[Key.overlayOpacity]: "Прозрачность обоев",

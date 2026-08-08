@@ -299,6 +299,7 @@ export const en: Translation = {
 	[Key.wavesAnimation]: "Waves Animation",
 	[Key.gradientTransition]: "Gradient Transition",
 	[Key.sakuraEffect]: "Sakura Effect",
+	[Key.snowEffect]: "Snow Effect",
 	[Key.effectsSettings]: "Effects Settings",
 	[Key.overlaySettings]: "Transparency Settings",
 	[Key.overlayOpacity]: "Wallpaper Opacity",

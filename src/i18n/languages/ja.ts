@@ -297,6 +297,7 @@ export const ja: Translation = {
 	[Key.wavesAnimation]: "波アニメーション",
 	[Key.gradientTransition]: "グラデーション遷移",
 	[Key.sakuraEffect]: "桜エフェクト",
+	[Key.snowEffect]: "雪エフェクト",
 	[Key.effectsSettings]: "エフェクト設定",
 	[Key.overlaySettings]: "透明設定",
 	[Key.overlayOpacity]: "壁紙の透明度",
