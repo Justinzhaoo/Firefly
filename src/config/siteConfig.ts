@@ -12,7 +12,7 @@ export const siteConfig: SiteConfig = {
 	subtitle: "我的博客",
 
 	// 站点 URL
-	site_url: "http://Justinzhaoo.gitub.io",
+	site_url: "https://Justinzhaoo.github.io",
 
 	// 站点描述
 	description:
