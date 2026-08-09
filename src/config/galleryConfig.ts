@@ -8,6 +8,14 @@ export const galleryConfig: GalleryConfig = {
 			id: "aa",
 			name: "111",
 			date: "2026-08-09",
+		},
+		{
+			id: "222",
+			name: "开心的事情",
+			description: "好玩的",
+			date: "2026-08-09",
+			location: "南京",
+			password: "1234",
 		}
 	],
 
