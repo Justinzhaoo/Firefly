@@ -1,5 +1,8 @@
 // 音乐播放器配置
 export type MusicPlayerConfig = {
+	// 总开关：false=播放器显示但不加载音乐，true=正常播放
+	enabled?: boolean;
+
 	// 使用方式：'meting' 或 'local'
 	mode?: "meting" | "local"; // "meting" 使用 Meting API，"local" 使用本地音乐列表
 
@@ -31,6 +34,14 @@ export type MusicPlayerConfig = {
 
 		// 歌单/专辑/单曲 ID 或搜索关键词
 		id?: string;
+
+		// 多歌单源（随机选一个使用）
+		sources?: Array<{
+			server: "netease" | "tencent" | "kugou" | "xiami" | "baidu";
+			type: "song" | "playlist" | "album" | "search" | "artist";
+			id: string;
+			name?: string;
+		}>;
 
 		// 认证 token（可选）
 		auth?: string;

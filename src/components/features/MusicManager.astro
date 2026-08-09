@@ -29,10 +29,11 @@ const localPlaylist =
 		: [];
 
 const managerConfigStr = JSON.stringify({
+	enabled: config.enabled ?? true,
 	mode: config.mode,
 	meting: config.meting,
 	localPlaylist: localPlaylist,
-	volume: config.volume ?? 0.7,
+	volume: config.volume ?? 0.5,
 	playMode: config.playMode ?? "list",
 	showLyrics: config.showLyrics ?? true,
 	i18n: {
@@ -96,7 +97,6 @@ const managerConfigStr = JSON.stringify({
 
     // ── Audio element (persistent, attached to body) ────────
     var audio = document.createElement('audio');
-    audio.crossOrigin = 'anonymous';
     audio.style.display = 'none';
     audio.preload = 'none'; // 阻止浏览器预加载和自动恢复播放
     document.body.appendChild(audio);
@@ -111,7 +111,7 @@ const managerConfigStr = JSON.stringify({
         playMode: 0, // 0: list, 1: one, 2: random
         volume: localStorage.getItem('music-player-volume') !== null
             ? parseFloat(localStorage.getItem('music-player-volume'))
-            : (config.volume || 0.7),
+            : (config.volume || 0.5),
         isMuted: false,
         lyrics: [],
         currentLrcIndex: -1,
@@ -130,27 +130,49 @@ const managerConfigStr = JSON.stringify({
         window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
     }
 
-    // ── Meting fetch ─────────────────────────────────────────
+    // ── Meting API endpoints (轮换使用) ───────────────────────
+    var metingEndpoints = (function () {
+        var main = config.meting && config.meting.api ? config.meting.api : 'https://api.injahow.cn/meting/?server=:server&type=:type&id=:id';
+        var fallbacks = (config.meting && config.meting.fallbackApis) || [];
+        return [main].concat(fallbacks);
+    })();
+
+    var _currentSourceName = '';
+
     async function fetchMetingData() {
         if (!config.meting) return;
         var m = config.meting;
-        var apis = [m.api].concat(m.fallbackApis || []);
 
-        for (var i = 0; i < apis.length; i++) {
-            var baseApi = apis[i];
-            if (!baseApi) continue;
+        // 从多歌单源中随机选一个
+        var sources = m.sources;
+        var server = m.server;
+        var type = m.type;
+        var id = m.id;
+        if (sources && sources.length > 0) {
+            var picked = sources[Math.floor(Math.random() * sources.length)];
+            server = picked.server || server;
+            type = picked.type || type;
+            id = picked.id || id;
+            _currentSourceName = picked.name || (server + ':' + id);
+            console.log('[Music] 随机选中歌单:', _currentSourceName);
+        }
+
+        // 先试主 API
+        var baseApi = metingEndpoints[0];
+        while (baseApi) {
+            if (!baseApi) break;
             try {
                 var fetchUrl = baseApi
-                    .replace(':server', m.server)
-                    .replace(':type', m.type)
-                    .replace(':id', m.id)
-                    .replace(':r', Math.random());
+                    .replace(':server', server)
+                    .replace(':type', type)
+                    .replace(':id', id);
+                fetchUrl += (fetchUrl.indexOf('?') > -1 ? '&' : '?') + 'r=' + Math.random();
                 if (m.auth) fetchUrl += '&auth=' + m.auth;
 
-                var res = await fetch(fetchUrl);
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                var data = await res.json();
+                var res = await fetch(fetchUrl, { signal: AbortSignal.timeout(10000) });
+                var raw = await res.json();
 
+                var data = Array.isArray(raw) ? raw : (raw.songs || raw.data || raw.playlist || []);
                 if (Array.isArray(data) && data.length > 0) {
                     state.playlist = data.map(function (item) {
                         return {
@@ -163,11 +185,47 @@ const managerConfigStr = JSON.stringify({
                     });
                     return;
                 }
+                break;
             } catch (e) {
-                console.warn('Meting API failed for ' + baseApi, e);
+                console.warn('[Music] 主API失败:', e);
+                break;
             }
         }
-        throw new Error('All Meting APIs failed');
+
+        // 主API挂了 → 从备用里随机轮换尝试
+        var fallbacks = metingEndpoints.slice(1).filter(function (a) { return !!a; });
+        while (fallbacks.length > 0) {
+            var randIdx = Math.floor(Math.random() * fallbacks.length);
+            var fbApi = fallbacks.splice(randIdx, 1)[0];
+            try {
+                var fbUrl = fbApi
+                    .replace(':server', server)
+                    .replace(':type', type)
+                    .replace(':id', id);
+                fbUrl += (fbUrl.indexOf('?') > -1 ? '&' : '?') + 'r=' + Math.random();
+                if (m.auth) fbUrl += '&auth=' + m.auth;
+
+                var fbRes = await fetch(fbUrl, { signal: AbortSignal.timeout(10000) });
+                var fbRaw = await fbRes.json();
+
+                var fbData = Array.isArray(fbRaw) ? fbRaw : (fbRaw.songs || fbRaw.data || fbRaw.playlist || []);
+                if (Array.isArray(fbData) && fbData.length > 0) {
+                    state.playlist = fbData.map(function (item) {
+                        return {
+                            name: item.title || item.name || 'Unknown',
+                            artist: item.author || item.artist || 'Unknown',
+                            url: item.url,
+                            pic: item.pic || item.cover || '',
+                            lrc: item.lrc
+                        };
+                    });
+                    return;
+                }
+            } catch (e) {
+                console.warn('[Music] 备用API失败:', fbApi);
+            }
+        }
+        throw new Error('所有 Meting API 都失败了');
     }
 
     // ── Lyrics ───────────────────────────────────────────────
@@ -405,6 +463,19 @@ const managerConfigStr = JSON.stringify({
     async function init() {
         if (state.initialized || state.initializing) return;
         state.initializing = true;
+
+        // 如果 enabled 为 false，播放器显示但不加载音乐
+        if (config.enabled === false) {
+            state.initialized = true;
+            state.initializing = false;
+            emit('fm:init', {
+                playlist: [],
+                playMode: state.playMode,
+                volume: state.volume,
+                isMuted: state.isMuted
+            });
+            return;
+        }
 
         try {
             if (config.mode === 'meting' && config.meting) {
