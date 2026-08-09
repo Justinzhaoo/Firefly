@@ -41,3 +41,6 @@ package/
 .codex*
 .claude
 .mimocode
+
+# trash
+src/content/dynamic/.trash/
