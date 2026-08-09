@@ -1,13 +1,14 @@
 import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dynamicDir = path.join(__dirname, 'src/content/dynamic');
 const trashDir = path.join(dynamicDir, '.trash');
+const galleryDir = path.join(__dirname, 'public/gallery');
+const galleryConfigFile = path.join(__dirname, 'src/config/galleryConfig.ts');
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
 // 颜色
@@ -23,84 +24,6 @@ const bold = (s) => `${B}${s}${N}`;
 const pad = (n) => String(n).padStart(2, '0');
 
 let clockTimer = null;
-
-/* ─── 加密 ─── */
-
-const CONFIG_FILE = path.join(__dirname, '.dynamic-key');
-
-function loadKey() {
-  try {
-    return fs.readFileSync(CONFIG_FILE, 'utf-8').trim();
-  } catch { return ''; }
-}
-
-function saveKey(k) {
-  fs.writeFileSync(CONFIG_FILE, k, 'utf-8');
-}
-
-function isEncrypted() {
-  return !!loadKey();
-}
-
-function encryptText(text, password) {
-  const key = crypto.scryptSync(password, 'firefly-salt', 32);
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  let enc = cipher.update(text, 'utf8', 'hex');
-  enc += cipher.final('hex');
-  const tag = cipher.getAuthTag().toString('hex');
-  return iv.toString('hex') + ':' + tag + ':' + enc;
-}
-
-function decryptText(encrypted, password) {
-  const parts = encrypted.split(':');
-  if (parts.length !== 3) return null;
-  const key = crypto.scryptSync(password, 'firefly-salt', 32);
-  const iv = Buffer.from(parts[0], 'hex');
-  const tag = Buffer.from(parts[1], 'hex');
-  try {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-    decipher.setAuthTag(tag);
-    let dec = decipher.update(parts[2], 'hex', 'utf8');
-    dec += decipher.final('utf8');
-    return dec;
-  } catch { return null; }
-}
-
-function encryptFile(filePath, password) {
-  const raw = fs.readFileSync(filePath, 'utf-8');
-  fs.writeFileSync(filePath, encryptText(raw, password), 'utf-8');
-}
-
-function decryptFile(filePath, password) {
-  const enc = fs.readFileSync(filePath, 'utf-8');
-  const dec = decryptText(enc, password);
-  if (dec === null) return false;
-  fs.writeFileSync(filePath, dec, 'utf-8');
-  return true;
-}
-
-// 加密某个目录下所有 .md 文件（返回备份 map，用于还原）
-function encryptAllMd(dir, password) {
-  if (!fs.existsSync(dir) || !password) return null;
-  const backup = new Map();
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'));
-  for (const f of files) {
-    const fp = path.join(dir, f);
-    backup.set(f, fs.readFileSync(fp, 'utf-8'));
-    encryptFile(fp, password);
-  }
-  return backup;
-}
-
-// 从备份还原 .md 文件
-function restoreAllMd(dir, backup) {
-  if (!backup) return;
-  for (const [f, content] of backup) {
-    const fp = path.join(dir, f);
-    if (fs.existsSync(fp)) fs.writeFileSync(fp, content, 'utf-8');
-  }
-}
 
 /* ─── 文件操作 ─── */
 
@@ -177,10 +100,10 @@ function menu() {
     const { fm } = getFileMeta(path.join(dynamicDir, f));
     return fm.pinned;
   }).length;
-  const enc = isEncrypted();
 
   console.log(`\n  ${bold('Firefly')} 动态管理  ${dim(nowStr())}`);
-  console.log(`  ${dim(files.length + ' 条动态' + (pinned ? ' · ' + pinned + ' 条置顶' : '') + (trash.length ? ' · ♻️ ' + trash.length : ''))}${enc ? G + ' · 🔒 已加密' : ''}${N}`);
+  const albums = readAlbums();
+  console.log(`  ${dim(files.length + ' 条动态' + (pinned ? ' · ' + pinned + ' 条置顶' : '') + (trash.length ? ' · ♻️ ' + trash.length : '') + ' · ' + albums.length + ' 个相册')}`);
   line();
 
   const opts = [
@@ -190,10 +113,10 @@ function menu() {
     ['4', '删除'],
     ['5', '回收站'],
     ['6', '搜索'],
+    ['7', '相册管理'],
   ];
   opts.forEach(([k, v]) => console.log(`  ${C}${k}${N}  ${v}`));
   console.log('');
-  console.log(`  ${G}7${N}  加密设置  ${dim(enc ? '🔒 已开启' : '🔓 未加密')}`);
   console.log(`  ${G}0${N}  退出`);
   console.log(`  ${G}r${N}  刷新`);
 
@@ -202,7 +125,7 @@ function menu() {
     readline.cursorTo(process.stdout, 0, clockRow);
     readline.clearLine(process.stdout, 0);
     process.stdout.write(`  ${bold('Firefly')} 动态管理  ${dim(nowStr())}`);
-    readline.cursorTo(process.stdout, 0, 16);
+    readline.cursorTo(process.stdout, 0, 14);
   }, 1000);
 
   ask(`\n  选一个 `, (c) => {
@@ -210,158 +133,12 @@ function menu() {
     const t = c.trim();
     const act = {
       '1': publish, '2': browse, '3': edit, '4': del,
-      '5': trashMenu, '6': search, '7': encSettings,
+      '5': trashMenu, '6': search, '7': albumMenu,
       '0': () => { console.log('\n  拜拜~'); rl.close(); },
       'r': menu
     };
     (act[t] || (() => { console.log('  ?'); setTimeout(menu, 400); }))();
   });
-}
-
-/* ─── 加密设置 ─── */
-
-function encSettings() {
-  clear();
-  const hasKey = isEncrypted();
-  console.log(`\n  ${bold('加密设置')}`);
-  line();
-  if (hasKey) {
-    console.log(`  当前: 🔒 已加密`);
-    console.log('  1  关闭加密（解密所有文件）');
-    console.log('  2  修改密码');
-  } else {
-    console.log(`  当前: 🔓 未加密`);
-    console.log('  1  开启加密（设置密码）');
-  }
-  console.log('  0  返回');
-  ask(`\n  选一个 `, (c) => {
-    const t = c.trim();
-    if (t === '0') { menu(); return; }
-    if (!hasKey && t === '1') setNewKey();
-    else if (hasKey && t === '1') disableEnc();
-    else if (hasKey && t === '2') changeKey();
-    else { console.log('  ?'); setTimeout(encSettings, 400); }
-  });
-}
-
-function setNewKey() {
-  ask(`  设置密码（不能为空）`, (pw) => {
-    if (!pw.trim()) { fail('密码不能为空'); setTimeout(encSettings, 400); return; }
-    ask(`  再次输入`, (pw2) => {
-      if (pw !== pw2) { fail('两次不一致'); setTimeout(encSettings, 400); return; }
-      saveKey(pw);
-
-      // 加密所有现有文件
-      const dynBak = encryptAllMd(dynamicDir, pw);
-      const trashBak = encryptAllMd(trashDir, pw);
-      // 立即解密回来（本地用 plaintext，git 推的时候才加密）
-      restoreAllMd(dynamicDir, dynBak);
-      restoreAllMd(trashDir, trashBak);
-
-      done('已开启加密');
-      // 把当前加密状态推一次
-      ask(`  推送加密文件？(Y/n)`, (push) => {
-        if (push.toLowerCase() !== 'n') {
-          encryptAndPush(pw, () => menu());
-        } else { menu(); }
-      });
-    });
-  });
-}
-
-function disableEnc() {
-  const pw = loadKey();
-  // 用密码解密所有文件，然后删掉 key
-  const dynBak = encryptAllMd(dynamicDir, pw);
-  const trashBak = encryptAllMd(trashDir, pw);
-  // 解密回来 = 用密码解密加密的内容
-  if (dynBak) {
-    for (const [f] of dynBak) {
-      const fp = path.join(dynamicDir, f);
-      if (fs.existsSync(fp)) decryptFile(fp, pw);
-    }
-  }
-  if (trashBak) {
-    for (const [f] of trashBak) {
-      const fp = path.join(trashDir, f);
-      if (fs.existsSync(fp)) decryptFile(fp, pw);
-    }
-  }
-
-  try { fs.unlinkSync(CONFIG_FILE); } catch {}
-  // 重新 push（不加密版本）
-  done('已关闭加密');
-  ask(`  推送解密文件？(Y/n)`, (push) => {
-    if (push.toLowerCase() !== 'n') {
-      try {
-        execSync('git add -A', { cwd: __dirname, stdio: 'pipe' });
-        execSync('git commit -m "chore: disable encryption"', { cwd: __dirname, stdio: 'pipe' });
-        execSync('git push', { cwd: __dirname, stdio: 'pipe' });
-        done('已推送');
-      } catch (e) { fail('推送失败'); }
-    }
-    menu();
-  });
-}
-
-function changeKey() {
-  const oldPw = loadKey();
-  ask(`  当前密码`, (oldInput) => {
-    if (oldInput !== oldPw) { fail('密码错误'); setTimeout(encSettings, 400); return; }
-    ask(`  新密码`, (pw) => {
-      if (!pw.trim()) { fail('不能为空'); setTimeout(encSettings, 400); return; }
-      ask(`  再次输入`, (pw2) => {
-        if (pw !== pw2) { fail('两次不一致'); setTimeout(encSettings, 400); return; }
-
-        // 先用旧密码解密所有文件，再用新密码加密
-        const files = [...getFiles().map(f => path.join(dynamicDir, f)), ...getTrashFiles().map(f => path.join(trashDir, f))];
-        for (const fp of files) {
-          if (fs.existsSync(fp)) {
-            const enc = fs.readFileSync(fp, 'utf-8');
-            const dec = decryptText(enc, oldPw);
-            if (dec !== null) fs.writeFileSync(fp, dec, 'utf-8');
-          }
-        }
-        // 现在是明文，用新密码加密备份（用于推送），再解密回来
-        saveKey(pw);
-        const dynBak = encryptAllMd(dynamicDir, pw);
-        const trashBak = encryptAllMd(trashDir, pw);
-        restoreAllMd(dynamicDir, dynBak);
-        restoreAllMd(trashDir, trashBak);
-
-        done('密码已修改');
-        ask(`  推送更新？(Y/n)`, (push) => {
-          if (push.toLowerCase() !== 'n') {
-            encryptAndPush(pw, () => menu());
-          } else { menu(); }
-        });
-      });
-    });
-  });
-}
-
-/* ─── 加密推送 ─── */
-
-function encryptAndPush(password, cb) {
-  console.log(`\n  🔒 加密文件...`);
-  const dynBak = encryptAllMd(dynamicDir, password);
-  const trashBak = encryptAllMd(trashDir, password);
-
-  try {
-    execSync('git add -A', { cwd: __dirname, stdio: 'pipe' });
-    execSync('git commit -m "chore: encrypted update"', { cwd: __dirname, stdio: 'pipe' });
-    console.log(`  📤 推送中...`);
-    execSync('git push', { cwd: __dirname, stdio: 'pipe' });
-    done('推送成功（GitHub 上文件已加密）');
-  } catch (e) {
-    fail('git 操作出问题，文件已解密回来');
-  }
-
-  // 不管成功失败，都解密回来
-  restoreAllMd(dynamicDir, dynBak);
-  restoreAllMd(trashDir, trashBak);
-  console.log(`  🔓 本地文件已解密`);
-  cb();
 }
 
 /* ─── 工具函数 ─── */
@@ -465,24 +242,15 @@ function deploy(filename, commitMsg, cb, isDelete = false) {
     const c = choice.trim() || '2';
     if (c === '1') { done('已保存'); cb(); return; }
 
-    const pw = loadKey();
-
-    // 如果有加密，先加密所有文件
-    let dynBak = null, trashBak = null;
-    if (pw) {
-      dynBak = encryptAllMd(dynamicDir, pw);
-      trashBak = encryptAllMd(trashDir, pw);
-    }
-
     try {
       if (isDelete) execSync(`git rm "src/content/dynamic/${filename}"`, { cwd: __dirname, stdio: 'pipe' });
       else execSync(`git add "src/content/dynamic/${filename}"`, { cwd: __dirname, stdio: 'pipe' });
       execSync(`git commit -m "${commitMsg}"`, { cwd: __dirname, stdio: 'pipe' });
-    } catch (e) { fail('git 提交有问题'); }
+    } catch (e) { fail('git 提交有问题，可能没有变更'); }
 
     if (c === '2') {
       console.log(`  推送中...`);
-      try { execSync('git push', { cwd: __dirname, stdio: 'pipe' }); done('已推送'); }
+      try { execSync('git push', { cwd: __dirname, stdio: 'pipe' }); done('已推送，等 Vercel 自动部署'); }
       catch (e) { fail('推送失败，检查网络'); }
     } else {
       console.log(`  构建中...`);
@@ -492,12 +260,6 @@ function deploy(filename, commitMsg, cb, isDelete = false) {
         execSync('git push', { cwd: __dirname, stdio: 'pipe' });
         done('完成！');
       } catch (e) { fail('构建失败'); }
-    }
-
-    // 解密回来
-    if (pw) {
-      restoreAllMd(dynamicDir, dynBak);
-      restoreAllMd(trashDir, trashBak);
     }
     cb();
   });
@@ -736,16 +498,12 @@ function restoreFile(filename, src, backFn) {
   done(`已恢复 ${filename}`);
   ask(`  推送恢复？(y/N)`, (push) => {
     if (push.toLowerCase() === 'y') {
-      const pw = loadKey();
-      let dynBak = null;
-      if (pw) dynBak = encryptAllMd(dynamicDir, pw);
       try {
         execSync(`git add "src/content/dynamic/${filename}"`, { cwd: __dirname, stdio: 'pipe' });
         execSync(`git commit -m "chore: restore dynamic - ${filename}"`, { cwd: __dirname, stdio: 'pipe' });
         execSync('git push', { cwd: __dirname, stdio: 'pipe' });
         done('已推送');
       } catch (e) { fail('推送失败'); }
-      if (pw) restoreAllMd(dynamicDir, dynBak);
     }
     setTimeout(backFn, 400);
   });
@@ -758,16 +516,12 @@ function permanentlyDelete(filename, fp, backFn) {
     done('已删除');
     ask(`  推送删除？(y/N)`, (push) => {
       if (push.toLowerCase() === 'y') {
-        const pw = loadKey();
-        let dynBak = null, trashBak = null;
-        if (pw) { dynBak = encryptAllMd(dynamicDir, pw); trashBak = encryptAllMd(trashDir, pw); }
         try {
           execSync('git add -A', { cwd: __dirname, stdio: 'pipe' });
           execSync(`git commit -m "chore: permanently delete ${filename}"`, { cwd: __dirname, stdio: 'pipe' });
           execSync('git push', { cwd: __dirname, stdio: 'pipe' });
           done('已推送');
         } catch (e) { fail('推送失败'); }
-        if (pw) { restoreAllMd(dynamicDir, dynBak); restoreAllMd(trashDir, trashBak); }
       }
       setTimeout(backFn, 400);
     });
@@ -812,6 +566,482 @@ function search() {
       if (num > 0 && num <= results.length) showDetail(results[num - 1].filename, dynamicDir, search);
       else menu();
     });
+  });
+}
+
+/* ══════════════════════════════════
+   7. 相册管理
+   ══════════════════════════════════ */
+
+let _albumBack = null;
+
+function readAlbums() {
+  if (!fs.existsSync(galleryConfigFile)) return [];
+  const raw = fs.readFileSync(galleryConfigFile, 'utf-8');
+  const albums = [];
+  let i = 0;
+  while (i < raw.length) {
+    const start = raw.indexOf('{', i);
+    if (start === -1) break;
+    const before = raw.slice(0, start);
+    if (before.includes('albums: [')) {
+      let depth = 0, end = -1;
+      for (let j = start; j < raw.length; j++) {
+        if (raw[j] === '{') depth++;
+        if (raw[j] === '}') { depth--; if (depth === 0) { end = j + 1; break; } }
+      }
+      if (end === -1) break;
+      const block = raw.slice(start, end);
+      const album = {};
+      const idM = block.match(/id:\s*["']([^"']+)["']/);
+      if (!idM) { i = end; continue; }
+      album.id = idM[1];
+      const nameM = block.match(/name:\s*["']([^"']+)["']/);
+      if (nameM) album.name = nameM[1];
+      const descM = block.match(/description:\s*["']([^"']*)["']/);
+      if (descM) album.description = descM[1];
+      const locM = block.match(/location:\s*["']([^"']*)["']/);
+      if (locM) album.location = locM[1];
+      const dateM = block.match(/date:\s*["']([^"']*)["']/);
+      if (dateM) album.date = dateM[1];
+      const covM = block.match(/cover:\s*["']([^"']*)["']/);
+      if (covM) album.cover = covM[1];
+      const tagM = block.match(/tags:\s*\[([^\]]*)\]/);
+      album.tags = tagM ? tagM[1].split(',').map(t => t.trim().replace(/["']/g, '')).filter(Boolean) : [];
+      const pwM = block.match(/password:\s*["']([^"']*)["']/);
+      if (pwM) album.password = pwM[1];
+      const phM = block.match(/passwordHint:\s*["']([^"']*)["']/);
+      if (phM) album.passwordHint = phM[1];
+      album.photos = scanPhotos(album.id);
+      albums.push(album);
+      i = end;
+    } else {
+      i = start + 1;
+    }
+  }
+  return albums;
+}
+
+function scanPhotos(albumId) {
+  const dir = path.join(galleryDir, albumId);
+  if (!fs.existsSync(dir)) return [];
+  const files = fs.readdirSync(dir).filter(f => /\.(jpe?g|png|webp|avif|gif)$/i.test(f)).sort();
+  const urlsFile = path.join(dir, 'urls.txt');
+  let remote = [];
+  if (fs.existsSync(urlsFile)) {
+    remote = fs.readFileSync(urlsFile, 'utf-8').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  }
+  return [...files, ...remote];
+}
+
+function countPhotos(albumId) {
+  const dir = path.join(galleryDir, albumId);
+  if (!fs.existsSync(dir)) return 0;
+  return fs.readdirSync(dir).filter(f => /\.(jpe?g|png|webp|avif|gif)$/i.test(f)).length;
+}
+
+function saveAlbums(albums) {
+  let raw = fs.readFileSync(galleryConfigFile, 'utf-8');
+  const start = raw.indexOf('albums: [');
+  if (start === -1) { fail('无法解析 galleryConfig.ts: 未找到 albums: ['); return false; }
+  const arrStart = start + 8;
+  let depth = 0, end = -1;
+  for (let j = arrStart; j < raw.length; j++) {
+    if (raw[j] === '[') depth++;
+    if (raw[j] === ']') { depth--; if (depth === 0) { end = j; break; } }
+  }
+  if (end === -1) { fail('无法解析 galleryConfig.ts: 未找到数组闭合 ]'); return false; }
+
+  const entries = albums.map(a => {
+    const lines = ['\t\t{'];
+    lines.push(`\t\t\tid: "${a.id}",`);
+    lines.push(`\t\t\tname: "${a.name}",`);
+    if (a.description) lines.push(`\t\t\tdescription: "${a.description}",`);
+    if (a.cover) lines.push(`\t\t\tcover: "${a.cover}",`);
+    if (a.date) lines.push(`\t\t\tdate: "${a.date}",`);
+    if (a.location) lines.push(`\t\t\tlocation: "${a.location}",`);
+    if (a.tags && a.tags.length) lines.push(`\t\t\ttags: [${a.tags.map(t => `"${t}"`).join(', ')}],`);
+    if (a.password) lines.push(`\t\t\tpassword: "${a.password}",`);
+    if (a.passwordHint) lines.push(`\t\t\tpasswordHint: "${a.passwordHint}",`);
+    lines.push('\t\t}');
+    return lines.join('\n');
+  }).join(',\n');
+
+  raw = raw.slice(0, arrStart + 1) + '\n' + entries + '\n\t' + raw.slice(end);
+  fs.writeFileSync(galleryConfigFile, raw, 'utf-8');
+  return true;
+}
+
+function deployAlbums(commitMsg, cb) {
+  clear();
+  console.log(`\n  ${bold('部署')}`);
+  line();
+  console.log(`  1  仅本地`);
+  console.log(`  2  直接推送（推荐）`);
+  console.log(`  3  本地构建 + 推送`);
+  ask(`\n  选一个 (默认 2)`, (c) => {
+    const ch = c.trim() || '2';
+    if (ch === '1') { done('已保存'); cb(); return; }
+    try {
+      execSync(`git add "src/config/galleryConfig.ts"`, { cwd: __dirname, stdio: 'pipe' });
+      execSync(`git add "public/gallery/"`, { cwd: __dirname, stdio: 'pipe' });
+      try { execSync(`git commit -m "${commitMsg}"`, { cwd: __dirname, stdio: 'pipe' }); } catch(e) {}
+    } catch(e) { fail('git 有问题'); }
+    if (ch === '2') {
+      console.log('  推送中...');
+      try { execSync('git push', { cwd: __dirname, stdio: 'pipe' }); done('已推送'); }
+      catch(e) { fail('推送失败'); }
+    } else {
+      try {
+        execSync('pnpm build', { cwd: __dirname, stdio: 'pipe' });
+        done('构建成功，推送中...');
+        execSync('git push', { cwd: __dirname, stdio: 'pipe' });
+        done('完成！');
+      } catch(e) { fail('构建失败'); }
+    }
+    cb();
+  });
+}
+
+// ── 相册主菜单 ──
+
+function albumMenu() {
+  _albumBack = menu;
+  const albums = readAlbums();
+  clear();
+  console.log(`\n  ${bold('相册管理')}  ${dim(albums.length + ' 个相册')}`);
+  line();
+  console.log(`  ${C}1${N}  新建相册`);
+  console.log(`  ${C}2${N}  浏览相册`);
+  console.log(`  ${C}3${N}  编辑相册`);
+  console.log(`  ${C}4${N}  照片管理`);
+  console.log(`  ${C}5${N}  删除相册`);
+  console.log(`  ${dim('──')}`);
+  console.log(`  ${C}0${N}  返回主菜单`);
+  ask(`选一个`, (c) => {
+    const t = c.trim();
+    if (t === '1') createAlbum();
+    else if (t === '2') browseAlbums();
+    else if (t === '3') editAlbum();
+    else if (t === '4') photoMenu();
+    else if (t === '5') deleteAlbum();
+    else if (t === '0') menu();
+    else { console.log('  ?'); setTimeout(albumMenu, 400); }
+  });
+}
+
+// ── 新建相册 ──
+
+function createAlbum() {
+  clear();
+  console.log(`\n  ${bold('新建相册')}`);
+  line();
+  ask(`相册ID (英文数字，如 "japan-2026")`, (id) => {
+    if (!id.trim()) { fail('ID 不能为空'); setTimeout(createAlbum, 400); return; }
+    if (!/^[a-zA-Z0-9_-]+$/.test(id.trim())) { fail('ID 只允许字母数字下划线连字符'); setTimeout(createAlbum, 400); return; }
+    const albums = readAlbums();
+    if (albums.find(a => a.id === id.trim())) { fail('该 ID 已存在'); setTimeout(createAlbum, 400); return; }
+    const albumId = id.trim();
+    ask(`相册名称`, (name) => {
+      if (!name.trim()) { fail('名称不能为空'); setTimeout(createAlbum, 400); return; }
+      ask(`描述 (可选)`, (desc) => {
+        askDateChoice(albumId, name, desc);
+      });
+    });
+  });
+}
+
+function askDateChoice(id, name, desc) {
+  const today = new Date().toISOString().slice(0, 10);
+  ask(`日期:\n  1  自定义输入\n  2  使用今天 (${today})\n  选择`, (c) => {
+    if (c.trim() === '2') {
+      askAlbumMeta(id, name, desc, today);
+    } else {
+      ask(`日期 (YYYY-MM-DD)`, (d) => {
+        askAlbumMeta(id, name, desc, d.trim());
+      });
+    }
+  });
+}
+
+function askAlbumMeta(id, name, desc, date) {
+  ask(`地点 (可选)`, (loc) => {
+    ask(`标签 (可选，逗号分隔)`, (tagsStr) => {
+      const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+      ask(`访问密码 (可选)`, (pw) => {
+        if (pw.trim()) {
+          ask(`密码提示 (可选)`, (hint) => {
+            finishCreate(id, name, desc, date, loc, tags, pw.trim(), hint.trim());
+          });
+        } else {
+          finishCreate(id, name, desc, date, loc, tags, '', '');
+        }
+      });
+    });
+  });
+}
+
+function finishCreate(id, name, desc, date, loc, tags, pw, ph) {
+  const albums = readAlbums();
+  albums.push({ id, name, description: desc || '', date: date || '', location: loc || '', tags, password: pw || '', passwordHint: ph || '' });
+  if (saveAlbums(albums)) {
+    const dir = path.join(galleryDir, id);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    done(`相册「${name}」已创建`);
+    console.log(`  public/gallery/${id}/`);
+    ask(`马上上传照片？(y/N)`, (up) => {
+      if (up.toLowerCase() === 'y') managePhotoDir(id);
+      else deployAlbums(`chore: add album - ${id}`, albumMenu);
+    });
+  } else {
+    fail('保存失败');
+    setTimeout(albumMenu, 1000);
+  }
+}
+
+// ── 浏览相册 ──
+
+function browseAlbums() {
+  const albums = readAlbums();
+  if (!albums.length) { fail('暂无相册'); setTimeout(albumMenu, 400); return; }
+  clear();
+  console.log(`\n  ${bold('相册列表')}  ${dim(albums.length + ' 个')}`);
+  line();
+  albums.forEach((a, i) => {
+    const cnt = countPhotos(a.id);
+    const pw = a.password ? ' 🔒' : '';
+    console.log(`  ${C}${String(i+1).padStart(2)}${N}  ${bold(a.name)}${pw}`);
+    console.log(`      ${dim(a.date || '-')}  ${a.location || '-'}  ${cnt}张`);
+  });
+  ask(`\n  编号查看，0 返回`, (n) => {
+    const num = parseInt(n.trim(), 10);
+    if (num > 0 && num <= albums.length) showAlbum(albums[num - 1]);
+    else albumMenu();
+  });
+}
+
+function showAlbum(album) {
+  clear();
+  const photos = scanPhotos(album.id);
+  console.log(`\n  ${bold(album.name)}`);
+  line();
+  console.log(`  ID:    ${album.id}`);
+  console.log(`  描述:  ${album.description || '-'}`);
+  console.log(`  日期:  ${album.date || '-'}`);
+  console.log(`  地点:  ${album.location || '-'}`);
+  console.log(`  标签:  ${album.tags && album.tags.length ? album.tags.join(', ') : '-'}`);
+  console.log(`  密码:  ${album.password ? album.password : '无'}`);
+  console.log(`  照片:  ${photos.length} 张`);
+  console.log(`  目录:  public/gallery/${album.id}/`);
+  if (photos.length) {
+    console.log('');
+    line();
+    photos.slice(0, 15).forEach((p, i) => console.log(`  ${C}${String(i+1).padStart(2)}${N}  ${dim(p.slice(0, 50))}`));
+    if (photos.length > 15) console.log(`  ${dim(`...还有 ${photos.length - 15} 张`)}`);
+  }
+  console.log('');
+  line();
+  console.log(`  ${C}1${N}  编辑`);
+  console.log(`  ${C}2${N}  照片管理`);
+  console.log(`  ${C}3${N}  删除`);
+  ask(`\n  选一个，0 返回`, (c) => {
+    const t = c.trim();
+    if (t === '1') editAlbumById(album.id);
+    else if (t === '2') managePhotoDir(album.id);
+    else if (t === '3') confirmDeleteAlbum(album.id);
+    else browseAlbums();
+  });
+}
+
+// ── 编辑相册 ──
+
+function editAlbum() {
+  const albums = readAlbums();
+  if (!albums.length) { fail('暂无相册'); setTimeout(albumMenu, 400); return; }
+  clear();
+  console.log(`\n  ${bold('编辑相册')}`);
+  line();
+  albums.forEach((a, i) => console.log(`  ${C}${i+1}${N}  ${bold(a.name)}  ${dim(a.id)}`));
+  ask(`\n  编号选择，0 返回`, (n) => {
+    const num = parseInt(n.trim(), 10);
+    if (num > 0 && num <= albums.length) editAlbumById(albums[num-1].id);
+    else albumMenu();
+  });
+}
+
+function editAlbumById(aid) {
+  const albums = readAlbums();
+  const album = albums.find(a => a.id === aid);
+  if (!album) { fail('未找到'); setTimeout(albumMenu, 400); return; }
+  clear();
+  console.log(`\n  ${bold('编辑: ' + album.name)}`);
+  line();
+  ask(`名称 (回车不变)`, (name) => {
+    if (name.trim()) album.name = name.trim();
+    ask(`描述 (回车不变, -清空)`, (desc) => {
+      if (desc.trim() === '-') album.description = '';
+      else if (desc.trim()) album.description = desc.trim();
+      ask(`日期 (回车不变)`, (date) => {
+        if (date.trim()) album.date = date.trim();
+        ask(`地点 (回车不变, -清空)`, (loc) => {
+          if (loc.trim() === '-') album.location = '';
+          else if (loc.trim()) album.location = loc.trim();
+          ask(`标签 (回车不变)`, (tagsStr) => {
+            if (tagsStr.trim()) album.tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
+            if (saveAlbums(albums)) {
+              done(`相册「${album.name}」已更新`);
+              deployAlbums(`chore: update album - ${aid}`, albumMenu);
+            } else { fail('保存失败'); setTimeout(albumMenu, 1000); }
+          });
+        });
+      });
+    });
+  });
+}
+
+// ── 删除相册 ──
+
+function deleteAlbum() {
+  const albums = readAlbums();
+  if (!albums.length) { fail('暂无相册'); setTimeout(albumMenu, 400); return; }
+  clear();
+  console.log(`\n  ${bold('删除相册')}`);
+  line();
+  albums.forEach((a, i) => console.log(`  ${C}${i+1}${N}  ${bold(a.name)}  ${dim(a.id + '  ' + countPhotos(a.id) + '张')}`));
+  ask(`\n  编号选择，0 返回`, (n) => {
+    const num = parseInt(n.trim(), 10);
+    if (num > 0 && num <= albums.length) confirmDeleteAlbum(albums[num-1].id);
+    else albumMenu();
+  });
+}
+
+function confirmDeleteAlbum(aid) {
+  const albums = readAlbums();
+  const album = albums.find(a => a.id === aid);
+  if (!album) { fail('未找到'); setTimeout(albumMenu, 400); return; }
+  clear();
+  console.log(`\n  ${bold('删除: ' + album.name)}`);
+  const cnt = countPhotos(aid);
+  if (cnt > 0) console.log(`  ${Y}⚠ 有 ${cnt} 张照片${N}`);
+  ask(`确认删除？(y/N)`, (ok) => {
+    if (ok.toLowerCase() !== 'y') { fail('取消'); setTimeout(albumMenu, 400); return; }
+    ask(`同时删除照片目录？(y/N)`, (del) => {
+      const newAlbums = albums.filter(a => a.id !== aid);
+      if (saveAlbums(newAlbums)) {
+        done('已从配置移除');
+        if (del.toLowerCase() === 'y') {
+          const dir = path.join(galleryDir, aid);
+          if (fs.existsSync(dir)) { fs.rmSync(dir, { recursive: true, force: true }); done('照片目录已删除'); }
+        }
+        deployAlbums(`chore: delete album - ${aid}`, albumMenu);
+      } else { fail('失败'); setTimeout(albumMenu, 1000); }
+    });
+  });
+}
+
+// ── 照片管理 ──
+
+function photoMenu() {
+  const albums = readAlbums();
+  if (!albums.length) { fail('暂无相册'); setTimeout(albumMenu, 400); return; }
+  clear();
+  console.log(`\n  ${bold('照片管理')}`);
+  line();
+  albums.forEach((a, i) => console.log(`  ${C}${i+1}${N}  ${bold(a.name)}  ${dim(countPhotos(a.id) + ' 张')}`));
+  ask(`\n  选择相册，0 返回`, (n) => {
+    const num = parseInt(n.trim(), 10);
+    if (num > 0 && num <= albums.length) managePhotoDir(albums[num-1].id);
+    else albumMenu();
+  });
+}
+
+function managePhotoDir(aid) {
+  const albums = readAlbums();
+  const album = albums.find(a => a.id === aid);
+  if (!album) { fail('未找到'); setTimeout(albumMenu, 400); return; }
+  const dir = path.join(galleryDir, aid);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const show = () => {
+    const photos = scanPhotos(aid);
+    clear();
+    console.log(`\n  ${bold(album.name)}  ${dim(photos.length + ' 张')}`);
+    line();
+    if (photos.length) {
+      photos.slice(0, 20).forEach((p, i) => console.log(`  ${C}${String(i+1).padStart(2)}${N}  ${dim(p.slice(0, 55))}`));
+      if (photos.length > 20) console.log(`  ${dim(`...还有 ${photos.length - 20} 张`)}`);
+    }
+    console.log('');
+    console.log(`  ${C}1${N}  打开目录（放入照片后回车）`);
+    console.log(`  ${C}2${N}  添加远程 URL`);
+    console.log(`  ${C}3${N}  删除照片`);
+    ask(`\n  选一个，0 返回`, (c) => {
+      const t = c.trim();
+      if (t === '1') openDirForUpload(aid, show);
+      else if (t === '2') addRemoteUrls(aid, show);
+      else if (t === '3') removePhoto(aid, show);
+      else photoMenu();
+    });
+  };
+  show();
+}
+
+function openDirForUpload(aid, backFn) {
+  const dir = path.join(galleryDir, aid);
+  try { execSync(`start "" "${dir}"`, { stdio: 'pipe' }); } catch(e) {}
+  ask(`放入照片后按回车`, () => {
+    const cnt = countPhotos(aid);
+    done(`现在有 ${cnt} 张照片`);
+    backFn();
+  });
+}
+
+function addRemoteUrls(aid, backFn) {
+  const dir = path.join(galleryDir, aid);
+  clear();
+  console.log(`\n  ${bold('添加远程 URL')}`);
+  line();
+  console.log(`  每行一个，空行结束\n`);
+  const urls = [];
+  function askUrl() {
+    ask('', (url) => {
+      if (!url.trim()) {
+        if (!urls.length) { fail('没有 URL'); backFn(); return; }
+        const uf = path.join(dir, 'urls.txt');
+        const exist = fs.existsSync(uf) ? fs.readFileSync(uf, 'utf-8') : '';
+        fs.writeFileSync(uf, exist + urls.join('\n') + '\n', 'utf-8');
+        done(`已添加 ${urls.length} 个 URL`);
+        backFn();
+        return;
+      }
+      urls.push(url.trim());
+      askUrl();
+    });
+  }
+  askUrl();
+}
+
+function removePhoto(aid, backFn) {
+  const dir = path.join(galleryDir, aid);
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => /\.(jpe?g|png|webp|avif|gif)$/i.test(f)) : [];
+  const urlsFile = path.join(dir, 'urls.txt');
+  const hasUrls = fs.existsSync(urlsFile);
+
+  if (!files.length && !hasUrls) { fail('没有照片'); setTimeout(backFn, 400); return; }
+  clear();
+  console.log(`\n  ${bold('删除照片')}`);
+  line();
+  files.forEach((f, i) => console.log(`  ${C}${i+1}${N}  ${f}`));
+  if (hasUrls) files.length ? console.log(`  ${C}d${N}  urls.txt`) : console.log(`  ${C}d${N}  ${dim('urls.txt')}`);
+  ask(`\n  编号删除，0 返回`, (n) => {
+    const t = n.trim();
+    if (t === 'd' && hasUrls) { fs.unlinkSync(urlsFile); done('已删除 urls.txt'); setTimeout(backFn, 400); return; }
+    const num = parseInt(t, 10);
+    if (num > 0 && num <= files.length) {
+      fs.unlinkSync(path.join(dir, files[num-1]));
+      done(`已删除 ${files[num-1]}`);
+      deployAlbums(`chore: delete photo - ${aid}`, () => removePhoto(aid, backFn));
+    } else backFn();
   });
 }
 
