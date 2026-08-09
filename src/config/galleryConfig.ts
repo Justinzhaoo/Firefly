@@ -4,14 +4,7 @@ import type { GalleryConfig } from "@/types/galleryConfig";
 export const galleryConfig: GalleryConfig = {
 	// 相册列表
 	albums: [
-		{
-			id: "111",
-			name: "11",
-			description: "11",
-			date: "11",
-			location: "11",
-			tags: ["11"],
-		}
+
 	],
 
 	// 瀑布流最小列宽(px)，浏览器根据容器宽度自动计算列数，默认 240
