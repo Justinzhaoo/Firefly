@@ -11,6 +11,14 @@ export const galleryConfig: GalleryConfig = {
 			date: "2026-08-09",
 			location: "南京",
 			password: "1234",
+		},
+		{
+			id: "111",
+			name: "11",
+			description: "11",
+			date: "11",
+			location: "11",
+			tags: ["11"],
 		}
 	],
 
