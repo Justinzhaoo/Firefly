@@ -145,28 +145,7 @@ const logoVariants = await Promise.all(
                     "flex flex-row items-center text-md",
                     siteConfig.navbar.followTheme ? "text-(--primary)" : "dark:text-white text-black"
                 ]} style="font-family: var(--font-navbar-title, inherit)">
-                                    {logoConfig?.type === "icon" ? (
-                                        <Icon is:inline name={logoConfig.value || "material-symbols:home-pin-outline"} class="navbar-logo text-[1.75rem] mb-1 mr-2" />
-                                    ) : logoIsImage && logoVariants.length > 0 ? (
-                                        logoVariants.map((variant) => variant.image ? (
-                                            <Picture
-                                                src={variant.image}
-                                                alt={logoAlt}
-                                                class={variant.class}
-                                                data-logo-theme={variant.theme}
-                                                formats={getImageFormats()}
-                                                fallbackFormat={getFallbackFormat()}
-                                                widths={[28, 56]}
-                                                loading="eager"
-                                                fetchpriority="high"
-                                            />
-                                        ) : (
-                                            <img src={variant.src} alt={logoAlt} class={variant.class} data-logo-theme={variant.theme} fetchpriority="high" />
-                                        ))
-                                    ) : (
-                                        <Icon is:inline name="material-symbols:home-pin-outline" class="navbar-logo text-[1.75rem] mb-1 mr-2" />
-                                    )}
-                    {navbarTitle}
+                                        {navbarTitle}
                 </div>
             </a>
             <div class:list={[

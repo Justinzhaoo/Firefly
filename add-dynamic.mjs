@@ -114,6 +114,7 @@ function menu() {
     ['5', '回收站'],
     ['6', '搜索'],
     ['7', '相册管理'],
+    ['8', '推送 GitHub'],
   ];
   opts.forEach(([k, v]) => console.log(`  ${C}${k}${N}  ${v}`));
   console.log('');
@@ -133,7 +134,7 @@ function menu() {
     const t = c.trim();
     const act = {
       '1': publish, '2': browse, '3': edit, '4': del,
-      '5': trashMenu, '6': search, '7': albumMenu,
+      '5': trashMenu, '6': search, '7': albumMenu, '8': gitPush,
       '0': () => { console.log('\n  拜拜~'); rl.close(); },
       'r': menu
     };
@@ -1042,6 +1043,49 @@ function removePhoto(aid, backFn) {
       done(`已删除 ${files[num-1]}`);
       deployAlbums(`chore: delete photo - ${aid}`, () => removePhoto(aid, backFn));
     } else backFn();
+  });
+}
+
+/* ─── 推送 GitHub ─── */
+
+function gitPush() {
+  clear();
+  console.log(`\n  ${bold('推送 GitHub')}\n`);
+  line();
+  try {
+    done('git add .');
+    execSync('git add .', { cwd: __dirname, stdio: 'pipe' });
+  } catch (e) {
+    fail('git add 失败');
+    waitAndMenu();
+    return;
+  }
+
+  ask('  提交信息', (msg) => {
+    const m = msg.trim() || 'update';
+    try {
+      execSync(`git commit -m "${m}"`, { cwd: __dirname, stdio: 'pipe' });
+      done('已提交');
+    } catch (e) {
+      const out = e.stdout?.toString() || '';
+      if (out.includes('nothing to commit')) {
+        fail('没有变更需要提交');
+        waitAndMenu();
+        return;
+      }
+      fail('提交失败');
+      waitAndMenu();
+      return;
+    }
+
+    console.log(`  ${dim('正在推送...')}`);
+    try {
+      execSync('git push', { cwd: __dirname, stdio: 'pipe' });
+      done('推送成功 ✅');
+    } catch (e) {
+      fail('推送失败，检查网络或权限');
+    }
+    waitAndMenu();
   });
 }
 
