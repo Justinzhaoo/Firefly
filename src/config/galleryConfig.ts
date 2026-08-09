@@ -5,14 +5,6 @@ export const galleryConfig: GalleryConfig = {
 	// 相册列表
 	albums: [
 		{
-			id: "222",
-			name: "开心的事情",
-			description: "好玩的",
-			date: "2026-08-09",
-			location: "南京",
-			password: "1234",
-		},
-		{
 			id: "111",
 			name: "11",
 			description: "11",
