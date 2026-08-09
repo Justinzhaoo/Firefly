@@ -44,3 +44,6 @@ package/
 
 # trash
 src/content/dynamic/.trash/
+
+# encryption key
+.dynamic-key

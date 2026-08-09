@@ -1,6 +1,7 @@
 import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
@@ -9,23 +10,97 @@ const dynamicDir = path.join(__dirname, 'src/content/dynamic');
 const trashDir = path.join(dynamicDir, '.trash');
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-// 只用几种基本的颜色
+// 颜色
 const G = '\x1b[90m'; // gray
 const C = '\x1b[36m'; // cyan
 const Y = '\x1b[33m'; // yellow
-
-let clockTimer = null;
 const R = '\x1b[32m'; // green
 const B = '\x1b[1m';  // bold
 const N = '\x1b[0m';  // reset
 
 const dim = (s) => `${G}${s}${N}`;
 const bold = (s) => `${B}${s}${N}`;
-
 const pad = (n) => String(n).padStart(2, '0');
-const now = new Date();
-const YYYY = now.getFullYear(), MM = pad(now.getMonth() + 1), DD = pad(now.getDate());
-const hh = pad(now.getHours()), mm = pad(now.getMinutes()), ss = pad(now.getSeconds());
+
+let clockTimer = null;
+
+/* ─── 加密 ─── */
+
+const CONFIG_FILE = path.join(__dirname, '.dynamic-key');
+
+function loadKey() {
+  try {
+    return fs.readFileSync(CONFIG_FILE, 'utf-8').trim();
+  } catch { return ''; }
+}
+
+function saveKey(k) {
+  fs.writeFileSync(CONFIG_FILE, k, 'utf-8');
+}
+
+function isEncrypted() {
+  return !!loadKey();
+}
+
+function encryptText(text, password) {
+  const key = crypto.scryptSync(password, 'firefly-salt', 32);
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  let enc = cipher.update(text, 'utf8', 'hex');
+  enc += cipher.final('hex');
+  const tag = cipher.getAuthTag().toString('hex');
+  return iv.toString('hex') + ':' + tag + ':' + enc;
+}
+
+function decryptText(encrypted, password) {
+  const parts = encrypted.split(':');
+  if (parts.length !== 3) return null;
+  const key = crypto.scryptSync(password, 'firefly-salt', 32);
+  const iv = Buffer.from(parts[0], 'hex');
+  const tag = Buffer.from(parts[1], 'hex');
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    let dec = decipher.update(parts[2], 'hex', 'utf8');
+    dec += decipher.final('utf8');
+    return dec;
+  } catch { return null; }
+}
+
+function encryptFile(filePath, password) {
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  fs.writeFileSync(filePath, encryptText(raw, password), 'utf-8');
+}
+
+function decryptFile(filePath, password) {
+  const enc = fs.readFileSync(filePath, 'utf-8');
+  const dec = decryptText(enc, password);
+  if (dec === null) return false;
+  fs.writeFileSync(filePath, dec, 'utf-8');
+  return true;
+}
+
+// 加密某个目录下所有 .md 文件（返回备份 map，用于还原）
+function encryptAllMd(dir, password) {
+  if (!fs.existsSync(dir) || !password) return null;
+  const backup = new Map();
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'));
+  for (const f of files) {
+    const fp = path.join(dir, f);
+    backup.set(f, fs.readFileSync(fp, 'utf-8'));
+    encryptFile(fp, password);
+  }
+  return backup;
+}
+
+// 从备份还原 .md 文件
+function restoreAllMd(dir, backup) {
+  if (!backup) return;
+  for (const [f, content] of backup) {
+    const fp = path.join(dir, f);
+    if (fs.existsSync(fp)) fs.writeFileSync(fp, content, 'utf-8');
+  }
+}
 
 /* ─── 文件操作 ─── */
 
@@ -102,12 +177,12 @@ function menu() {
     const { fm } = getFileMeta(path.join(dynamicDir, f));
     return fm.pinned;
   }).length;
+  const enc = isEncrypted();
 
   console.log(`\n  ${bold('Firefly')} 动态管理  ${dim(nowStr())}`);
-  console.log(`  ${dim(files.length + ' 条动态' + (pinned ? ' · ' + pinned + ' 条置顶' : '') + (trash.length ? ' · ♻️ ' + trash.length : ''))}`);
+  console.log(`  ${dim(files.length + ' 条动态' + (pinned ? ' · ' + pinned + ' 条置顶' : '') + (trash.length ? ' · ♻️ ' + trash.length : ''))}${enc ? G + ' · 🔒 已加密' : ''}${N}`);
   line();
 
-  console.log(`  ${G}${'─'.repeat(40)}${N}`);
   const opts = [
     ['1', '写动态'],
     ['2', '浏览'],
@@ -118,24 +193,175 @@ function menu() {
   ];
   opts.forEach(([k, v]) => console.log(`  ${C}${k}${N}  ${v}`));
   console.log('');
+  console.log(`  ${G}7${N}  加密设置  ${dim(enc ? '🔒 已开启' : '🔓 未加密')}`);
   console.log(`  ${G}0${N}  退出`);
   console.log(`  ${G}r${N}  刷新`);
 
-  // 实时时钟 — 覆盖时间行，不干扰输入
   const clockRow = 1;
   clockTimer = setInterval(() => {
     readline.cursorTo(process.stdout, 0, clockRow);
     readline.clearLine(process.stdout, 0);
     process.stdout.write(`  ${bold('Firefly')} 动态管理  ${dim(nowStr())}`);
-    readline.cursorTo(process.stdout, 0, 15);
+    readline.cursorTo(process.stdout, 0, 16);
   }, 1000);
 
   ask(`\n  选一个 `, (c) => {
     stopClock();
     const t = c.trim();
-    const act = { '1': publish, '2': browse, '3': edit, '4': del, '5': trashMenu, '6': search, '0': () => { console.log('\n  拜拜~'); rl.close(); }, 'r': menu };
+    const act = {
+      '1': publish, '2': browse, '3': edit, '4': del,
+      '5': trashMenu, '6': search, '7': encSettings,
+      '0': () => { console.log('\n  拜拜~'); rl.close(); },
+      'r': menu
+    };
     (act[t] || (() => { console.log('  ?'); setTimeout(menu, 400); }))();
   });
+}
+
+/* ─── 加密设置 ─── */
+
+function encSettings() {
+  clear();
+  const hasKey = isEncrypted();
+  console.log(`\n  ${bold('加密设置')}`);
+  line();
+  if (hasKey) {
+    console.log(`  当前: 🔒 已加密`);
+    console.log('  1  关闭加密（解密所有文件）');
+    console.log('  2  修改密码');
+  } else {
+    console.log(`  当前: 🔓 未加密`);
+    console.log('  1  开启加密（设置密码）');
+  }
+  console.log('  0  返回');
+  ask(`\n  选一个 `, (c) => {
+    const t = c.trim();
+    if (t === '0') { menu(); return; }
+    if (!hasKey && t === '1') setNewKey();
+    else if (hasKey && t === '1') disableEnc();
+    else if (hasKey && t === '2') changeKey();
+    else { console.log('  ?'); setTimeout(encSettings, 400); }
+  });
+}
+
+function setNewKey() {
+  ask(`  设置密码（不能为空）`, (pw) => {
+    if (!pw.trim()) { fail('密码不能为空'); setTimeout(encSettings, 400); return; }
+    ask(`  再次输入`, (pw2) => {
+      if (pw !== pw2) { fail('两次不一致'); setTimeout(encSettings, 400); return; }
+      saveKey(pw);
+
+      // 加密所有现有文件
+      const dynBak = encryptAllMd(dynamicDir, pw);
+      const trashBak = encryptAllMd(trashDir, pw);
+      // 立即解密回来（本地用 plaintext，git 推的时候才加密）
+      restoreAllMd(dynamicDir, dynBak);
+      restoreAllMd(trashDir, trashBak);
+
+      done('已开启加密');
+      // 把当前加密状态推一次
+      ask(`  推送加密文件？(Y/n)`, (push) => {
+        if (push.toLowerCase() !== 'n') {
+          encryptAndPush(pw, () => menu());
+        } else { menu(); }
+      });
+    });
+  });
+}
+
+function disableEnc() {
+  const pw = loadKey();
+  // 用密码解密所有文件，然后删掉 key
+  const dynBak = encryptAllMd(dynamicDir, pw);
+  const trashBak = encryptAllMd(trashDir, pw);
+  // 解密回来 = 用密码解密加密的内容
+  if (dynBak) {
+    for (const [f] of dynBak) {
+      const fp = path.join(dynamicDir, f);
+      if (fs.existsSync(fp)) decryptFile(fp, pw);
+    }
+  }
+  if (trashBak) {
+    for (const [f] of trashBak) {
+      const fp = path.join(trashDir, f);
+      if (fs.existsSync(fp)) decryptFile(fp, pw);
+    }
+  }
+
+  try { fs.unlinkSync(CONFIG_FILE); } catch {}
+  // 重新 push（不加密版本）
+  done('已关闭加密');
+  ask(`  推送解密文件？(Y/n)`, (push) => {
+    if (push.toLowerCase() !== 'n') {
+      try {
+        execSync('git add -A', { cwd: __dirname, stdio: 'pipe' });
+        execSync('git commit -m "chore: disable encryption"', { cwd: __dirname, stdio: 'pipe' });
+        execSync('git push', { cwd: __dirname, stdio: 'pipe' });
+        done('已推送');
+      } catch (e) { fail('推送失败'); }
+    }
+    menu();
+  });
+}
+
+function changeKey() {
+  const oldPw = loadKey();
+  ask(`  当前密码`, (oldInput) => {
+    if (oldInput !== oldPw) { fail('密码错误'); setTimeout(encSettings, 400); return; }
+    ask(`  新密码`, (pw) => {
+      if (!pw.trim()) { fail('不能为空'); setTimeout(encSettings, 400); return; }
+      ask(`  再次输入`, (pw2) => {
+        if (pw !== pw2) { fail('两次不一致'); setTimeout(encSettings, 400); return; }
+
+        // 先用旧密码解密所有文件，再用新密码加密
+        const files = [...getFiles().map(f => path.join(dynamicDir, f)), ...getTrashFiles().map(f => path.join(trashDir, f))];
+        for (const fp of files) {
+          if (fs.existsSync(fp)) {
+            const enc = fs.readFileSync(fp, 'utf-8');
+            const dec = decryptText(enc, oldPw);
+            if (dec !== null) fs.writeFileSync(fp, dec, 'utf-8');
+          }
+        }
+        // 现在是明文，用新密码加密备份（用于推送），再解密回来
+        saveKey(pw);
+        const dynBak = encryptAllMd(dynamicDir, pw);
+        const trashBak = encryptAllMd(trashDir, pw);
+        restoreAllMd(dynamicDir, dynBak);
+        restoreAllMd(trashDir, trashBak);
+
+        done('密码已修改');
+        ask(`  推送更新？(Y/n)`, (push) => {
+          if (push.toLowerCase() !== 'n') {
+            encryptAndPush(pw, () => menu());
+          } else { menu(); }
+        });
+      });
+    });
+  });
+}
+
+/* ─── 加密推送 ─── */
+
+function encryptAndPush(password, cb) {
+  console.log(`\n  🔒 加密文件...`);
+  const dynBak = encryptAllMd(dynamicDir, password);
+  const trashBak = encryptAllMd(trashDir, password);
+
+  try {
+    execSync('git add -A', { cwd: __dirname, stdio: 'pipe' });
+    execSync('git commit -m "chore: encrypted update"', { cwd: __dirname, stdio: 'pipe' });
+    console.log(`  📤 推送中...`);
+    execSync('git push', { cwd: __dirname, stdio: 'pipe' });
+    done('推送成功（GitHub 上文件已加密）');
+  } catch (e) {
+    fail('git 操作出问题，文件已解密回来');
+  }
+
+  // 不管成功失败，都解密回来
+  restoreAllMd(dynamicDir, dynBak);
+  restoreAllMd(trashDir, trashBak);
+  console.log(`  🔓 本地文件已解密`);
+  cb();
 }
 
 /* ─── 工具函数 ─── */
@@ -239,15 +465,24 @@ function deploy(filename, commitMsg, cb, isDelete = false) {
     const c = choice.trim() || '2';
     if (c === '1') { done('已保存'); cb(); return; }
 
+    const pw = loadKey();
+
+    // 如果有加密，先加密所有文件
+    let dynBak = null, trashBak = null;
+    if (pw) {
+      dynBak = encryptAllMd(dynamicDir, pw);
+      trashBak = encryptAllMd(trashDir, pw);
+    }
+
     try {
       if (isDelete) execSync(`git rm "src/content/dynamic/${filename}"`, { cwd: __dirname, stdio: 'pipe' });
       else execSync(`git add "src/content/dynamic/${filename}"`, { cwd: __dirname, stdio: 'pipe' });
       execSync(`git commit -m "${commitMsg}"`, { cwd: __dirname, stdio: 'pipe' });
-    } catch (e) { fail('git 提交有问题，可能没有变更'); }
+    } catch (e) { fail('git 提交有问题'); }
 
     if (c === '2') {
       console.log(`  推送中...`);
-      try { execSync('git push', { cwd: __dirname, stdio: 'pipe' }); done('已推送，等 Vercel 自动部署'); }
+      try { execSync('git push', { cwd: __dirname, stdio: 'pipe' }); done('已推送'); }
       catch (e) { fail('推送失败，检查网络'); }
     } else {
       console.log(`  构建中...`);
@@ -257,6 +492,12 @@ function deploy(filename, commitMsg, cb, isDelete = false) {
         execSync('git push', { cwd: __dirname, stdio: 'pipe' });
         done('完成！');
       } catch (e) { fail('构建失败'); }
+    }
+
+    // 解密回来
+    if (pw) {
+      restoreAllMd(dynamicDir, dynBak);
+      restoreAllMd(trashDir, trashBak);
     }
     cb();
   });
@@ -300,6 +541,10 @@ function previewPublish(lines) {
 }
 
 function askDateTime(lines) {
+  const now = new Date();
+  const YYYY = now.getFullYear(), MM = pad(now.getMonth() + 1), DD = pad(now.getDate());
+  const hh = pad(now.getHours()), mm = pad(now.getMinutes()), ss = pad(now.getSeconds());
+
   clear();
   console.log(`\n  ${bold('日期时间')}`);
   line();
@@ -491,12 +736,16 @@ function restoreFile(filename, src, backFn) {
   done(`已恢复 ${filename}`);
   ask(`  推送恢复？(y/N)`, (push) => {
     if (push.toLowerCase() === 'y') {
+      const pw = loadKey();
+      let dynBak = null;
+      if (pw) dynBak = encryptAllMd(dynamicDir, pw);
       try {
         execSync(`git add "src/content/dynamic/${filename}"`, { cwd: __dirname, stdio: 'pipe' });
         execSync(`git commit -m "chore: restore dynamic - ${filename}"`, { cwd: __dirname, stdio: 'pipe' });
         execSync('git push', { cwd: __dirname, stdio: 'pipe' });
         done('已推送');
       } catch (e) { fail('推送失败'); }
+      if (pw) restoreAllMd(dynamicDir, dynBak);
     }
     setTimeout(backFn, 400);
   });
@@ -509,12 +758,16 @@ function permanentlyDelete(filename, fp, backFn) {
     done('已删除');
     ask(`  推送删除？(y/N)`, (push) => {
       if (push.toLowerCase() === 'y') {
+        const pw = loadKey();
+        let dynBak = null, trashBak = null;
+        if (pw) { dynBak = encryptAllMd(dynamicDir, pw); trashBak = encryptAllMd(trashDir, pw); }
         try {
           execSync('git add -A', { cwd: __dirname, stdio: 'pipe' });
           execSync(`git commit -m "chore: permanently delete ${filename}"`, { cwd: __dirname, stdio: 'pipe' });
           execSync('git push', { cwd: __dirname, stdio: 'pipe' });
           done('已推送');
         } catch (e) { fail('推送失败'); }
+        if (pw) { restoreAllMd(dynamicDir, dynBak); restoreAllMd(trashDir, trashBak); }
       }
       setTimeout(backFn, 400);
     });
